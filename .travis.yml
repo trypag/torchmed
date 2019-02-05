@@ -1,0 +1,41 @@
+language: python
+python:
+    - 3.5
+    - 3.6
+
+install:
+    - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
+    - bash miniconda.sh -b -p $HOME/miniconda
+    - export PATH="$HOME/miniconda/bin:$PATH"
+    - hash -r
+    - conda config --set always_yes yes --set changeps1 no
+    - conda update -q conda
+    # Useful for debugging any issues with conda
+    - conda info -a
+
+    - conda create -q -n test-environment python=$TRAVIS_PYTHON_VERSION
+    - source activate test-environment
+    - conda config --append channels simpleitk
+    - conda config --prepend channels soumith
+
+    # install python 3.5 for simpleITK
+    - conda install python=3.5
+
+    - conda env export -n test-environment
+    - conda install simpleitk=1.0.0
+    - conda install pytorch torchvision
+    - pip install codecov
+    - pip install -r requirements.txt
+
+# script:
+    #- coverage run --source=torchmed -m unittest discover -s test/
+
+# after_success:
+    #- codecov --token=6f6b0796-78bb-4e30-a3e8-3ce76af84a1a
+
+notifications:
+  slack: pagboat:UVFJS35PcjobkUmztxAygsNG
+  on_success: change
+  on_failure: always
+
+sudo: false

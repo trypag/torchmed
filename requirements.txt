@@ -1,0 +1,9 @@
+torch>=1.0.0
+nibabel
+SimpleITK
+Pillow
+numpy
+pandas
+scipy
+matplotlib
+opencv-python
