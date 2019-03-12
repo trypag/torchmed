@@ -125,18 +125,18 @@ class LambdaControl:
             self.update_counter = 0
             self.train_nan_count += 1
 
-        if epoch < self.tuning_epoch:
-            if epoch - self.last_good_epoch >= 5 and (epoch - self.last_good_epoch) % 5 == 0:
-                if epoch - self.last_good_epoch >= 10:
-                    print('--Insufficient dice for 15 epochs, reboot')
-                    print('--Decreasing lambda factor')
-                    self.lambda_ *= 0.9
-                else:
-                    print('--Decreasing lambda because of deacreasing dice')
-                    self.lambda_ *= 0.95
+        if epoch - self.last_good_epoch >= 5 and (epoch - self.last_good_epoch) % 5 == 0:
+            if epoch - self.last_good_epoch >= 10:
+                print('--Insufficient dice for 15 epochs, reboot')
+                print('--Decreasing lambda factor')
+                self.lambda_ *= 0.9
+                return -2
+            else:
+                print('--Decreasing lambda because of deacreasing dice')
+                self.lambda_ *= 0.95
 
-                self.lambda_factor *= 0.98
-                self.update_counter = 0
+            self.lambda_factor *= 0.98
+            self.update_counter = 0
 
         if self.lambda_factor < 1:
             print('lambda_factor is < 1, ending.')

@@ -3,7 +3,7 @@ import torch
 
 from architecture import ModSegNet
 from inference_canvas import InferenceCanvas
-from datasets.mappings import ClassMapping
+from datasets.mappings import Miccai12Mapping
 from datasets.inference import MICCAI2012MedFile
 
 
@@ -27,7 +27,7 @@ parser.add_argument('--wo-metrics', action='store_false',
 def main():
     global args
     args = parser.parse_args()
-    model = ModSegNet(num_classes=ClassMapping().nb_classes,
+    model = ModSegNet(num_classes=Miccai12Mapping().nb_classes,
                       n_init_features=7).cuda()
     inference_canvas = InferenceCanvas(args, infer_segmentation_map,
                                        MICCAI2012MedFile, model)

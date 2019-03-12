@@ -44,6 +44,11 @@ The implementation of the NonAdjLoss is contained in :
     segmentation maps.
   - `loss.py` : adjacency estimator and tuning of the lambda weighting parameter.
 
+## Pre-trained models
+
+You can download the trained models [here](https://drive.google.com/drive/folders/1OWlQlzhjOgl1GuaRKibRyyo_ce-CtSln?usp=sharing)
+for the 2D baseline, 2D + NonAdjLoss and 2D + NonAdjLoss with semi-supervision.
+
 ### How to
 
 In practice this non-adjacency penalization is applied on a pre-trained model,

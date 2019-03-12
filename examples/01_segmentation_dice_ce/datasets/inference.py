@@ -16,7 +16,7 @@ class MICCAI2012MedFile(object):
             'image_ref': SitkReader(
                 os.path.join(data, 'prepro_im_mni_bc.nii.gz'),
                 torch_type='torch.FloatTensor',
-                transform=Pad(((1, 1), (3, 3), (1, 1)), 'reflect'))
+                transform=Pad(((1, 1), (0, 0), (1, 1)), 'reflect'))
         }
         # medfile dataset takes a data map, a Sampler and a transform
         self.test_data = MedFile(patient_data, self.buid_sampler(nb_workers),
@@ -28,8 +28,8 @@ class MICCAI2012MedFile(object):
             v._torch_init()
 
     def buid_sampler(self, nb_workers):
-        # sliding window of size [184, 7, 184] without padding
-        patch2d = SquaredSlidingWindow(patch_size=[184, 7, 184], use_padding=False)
+        # sliding window of size [184, 1, 184] without padding
+        patch2d = SquaredSlidingWindow(patch_size=[184, 1, 184], use_padding=False)
         # pattern map links image id to a Sampler
         pattern_mapper = {'input': ('image_ref', patch2d)}
 

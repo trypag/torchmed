@@ -3,7 +3,7 @@ import torch
 
 from architecture import ModSegNet
 from inference_canvas import InferenceCanvas
-from datasets.mappings import ClassMapping
+from datasets.mappings import Miccai12Mapping
 from datasets.inference import MICCAI2012MedFile
 
 
@@ -27,8 +27,8 @@ parser.add_argument('--wo-metrics', action='store_false',
 def main():
     global args
     args = parser.parse_args()
-    model = ModSegNet(num_classes=ClassMapping().nb_classes,
-                      n_init_features=7).cuda()
+    model = ModSegNet(num_classes=Miccai12Mapping().nb_classes,
+                      n_init_features=1).cuda()
     inference_canvas = InferenceCanvas(args, infer_segmentation_map,
                                        MICCAI2012MedFile, model)
     inference_canvas()
@@ -45,7 +45,7 @@ def infer_segmentation_map(model, data_loader, label_map):
             # for each element of the batch
             for i in range(0, predicted.size(0)):
                 y = position[i][1]
-                label_map[:, y - 3, :] = predicted[i].cpu().numpy()[1:-1, 1:-1]
+                label_map[:, y, :] = predicted[i].cpu().numpy()
 
     return probability_maps
 

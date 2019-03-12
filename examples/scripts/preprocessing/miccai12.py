@@ -55,22 +55,22 @@ def main():
         filename = os.path.basename(train_patient)
         train_ids.add(filename[0:4])
 
-    test_ids = set()
+    test_patients = set()
     for test_patient in os.listdir(os.path.join(root_dir, 'testing-images')):
         filename = os.path.basename(test_patient)
-        test_ids.add(filename[0:4])
+        test_patients.add(filename[0:4])
 
     # create destination directories of matching IDs
     print('2/ --> Creating corresponding tree hierarchy')
     # convert set to list so we can iterate over it
     # sorted so that we split in the same way each time this script is called
     train_ids = sorted(list(train_ids))
-    test_ids = sorted(list(test_ids))
+    test_patients = sorted(list(test_patients))
 
     for train_patient in train_ids:
         os.makedirs(os.path.join(dest_dir, 'train/' + train_patient))
 
-    for test_patient in test_ids:
+    for test_patient in test_patients:
         os.makedirs(os.path.join(dest_dir, 'test/' + test_patient))
 
     print('3/ --> Copying files to destination folders')
@@ -104,7 +104,7 @@ def main():
             os.path.join(dest_dir, 'train/' + train_patient + '/'))
 
     # copy image for the test set
-    for test_patient in test_ids:
+    for test_patient in test_patients:
         # image
         filename = os.path.join(
             root_dir,
@@ -274,12 +274,11 @@ def main():
     train_mean = mean / len(train_patients)
     train_std = std / len(train_patients)
 
-    # train dataset
     for name, dataset in [('train/', train_patients),
                           ('validation/', validation_patients),
-                          ('test/', test_ids)]:
+                          ('test/', test_patients)]:
         for p_id in dataset:
-            patient_dir = os.path.join(dest_dir, name + train_id)
+            patient_dir = os.path.join(dest_dir, name + p_id)
             brain = SitkReader(patient_dir + '/im_mni_bc.nii.gz',
                                torch_type='torch.FloatTensor')
             brain_array = brain.to_numpy()
@@ -308,7 +307,7 @@ def main():
     allowed_val.flush()
 
     allowed_test = open(os.path.join(dest_dir, 'test/allowed_data.txt'), "w")
-    for test_patient in test_ids:
+    for test_patient in test_patients:
         allowed_test.write(test_patient + '\n')
     allowed_test.flush()
 

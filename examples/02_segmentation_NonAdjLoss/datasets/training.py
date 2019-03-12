@@ -26,7 +26,8 @@ class MICCAI2012Dataset(object):
             paired_transform=self.elastic_transform)
         self.validation_dataset = MedFolder(
             self.generate_medfiles(os.path.join(base_dir, 'validation'), nb_workers),
-            transform=transform_train, target_transform=transform_target)
+            transform=transform_train, target_transform=transform_target,
+            paired_transform=self.elastic_transform)
 
         # init all the images before multiprocessing
         for medfile in self.train_dataset._medfiles:
@@ -90,11 +91,9 @@ class MICCAI2012Dataset(object):
                                nb_workers=nb_workers)
 
     def elastic_transform(self, data, label):
-        p = random.random()
-        data_label = torch.cat([data, label.unsqueeze(0).float()], 0)
-
         # elastic deformation
-        if p > 0.4:
+        if random.random() > 0.4:
+            data_label = torch.cat([data, label.unsqueeze(0).float()], 0)
             data_label = elastic_deformation_2d(
                 data_label,
                 data_label.shape[1] * 1.05,  # intensity of the deformation
@@ -102,7 +101,7 @@ class MICCAI2012Dataset(object):
                 0,  # order of bspline interp
                 mode='nearest')  # border mode
 
-        data = data_label[0:7]
-        label = data_label[7].long()
+            data = data_label[0:7]
+            label = data_label[7].long()
 
         return data, label

@@ -17,7 +17,7 @@ class MICCAI2012Dataset(object):
             return tensor.permute(1, 0, 2)
 
         def transform_target(tensor):
-            return tensor.permute(1, 0, 2)[3]
+            return tensor.permute(1, 0, 2)[0]
 
         self.train_dataset = MedFolder(
             self.generate_medfiles(os.path.join(base_dir, 'train'), nb_workers),
@@ -62,7 +62,7 @@ class MICCAI2012Dataset(object):
 
     def build_patient_data_map(self, dir):
         # pads each dimension of the image on both sides.
-        pad_reflect = Pad(((1, 1), (3, 3), (1, 1)), 'reflect')
+        pad_reflect = Pad(((1, 1), (0, 0), (1, 1)), 'reflect')
         file_map = {
             'image_ref': SitkReader(
                 os.path.join(dir, 'prepro_im_mni_bc.nii.gz'),
@@ -75,8 +75,8 @@ class MICCAI2012Dataset(object):
         return file_map
 
     def build_sampler(self, nb_workers):
-        # sliding window of size [184, 7, 184] without padding
-        patch2d = SquaredSlidingWindow(patch_size=[184, 7, 184], use_padding=False)
+        # sliding window of size [184, 1, 184] without padding
+        patch2d = SquaredSlidingWindow(patch_size=[184, 1, 184], use_padding=False)
         # pattern map links image id to a Sampler
         pattern_mapper = {'input': ('image_ref', patch2d),
                           'target': ('target', patch2d)}
@@ -86,11 +86,9 @@ class MICCAI2012Dataset(object):
                                nb_workers=nb_workers)
 
     def elastic_transform(self, data, label):
-        p = random.random()
-        data_label = torch.cat([data, label.unsqueeze(0).float()], 0)
-
         # elastic deformation
-        if p > 0.4:
+        if random.random() > 0.4:
+            data_label = torch.cat([data, label.unsqueeze(0).float()], 0)
             data_label = elastic_deformation_2d(
                 data_label,
                 data_label.shape[1] * 1.05,  # intensity of the deformation
@@ -98,7 +96,7 @@ class MICCAI2012Dataset(object):
                 0,  # order of bspline interp
                 mode='nearest')  # border mode
 
-        data = data_label[0:7]
-        label = data_label[7].long()
+            data = data_label[0].unsqueeze(0)
+            label = data_label[1].long()
 
         return data, label

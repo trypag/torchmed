@@ -7,7 +7,7 @@ from torchmed.utils.logger_plotter import LoggerPlotter, MetricLogger
 from torchmed.utils.loss import dice_loss
 
 from architecture import ModSegNet
-from datasets.mappings import ClassMapping
+from datasets.mappings import Miccai12Mapping
 from datasets.training import MICCAI2012Dataset
 from utils import *
 
@@ -77,8 +77,8 @@ def main():
     #
     #####
     torch.backends.cudnn.benchmark = True
-    nb_classes = ClassMapping().nb_classes
-    model = ModSegNet(num_classes=nb_classes, n_init_features=7).cuda()
+    nb_classes = Miccai12Mapping().nb_classes
+    model = ModSegNet(num_classes=nb_classes, n_init_features=1).cuda()
 
     # optionally resume from a checkpoint
     if args.resume is not None and args.resume != 'None':
@@ -166,14 +166,13 @@ def main():
 def train(train_loader, model, criterion, optimizer, epoch, logger):
     logger.clear_metrics()
 
-    for i, (_, batch_img, target) in enumerate(train_loader):
-        target_var = target.cuda()
-        patch = batch_img.cuda()
+    for i, (_, img, target) in enumerate(train_loader):
+        target_gpu = target.cuda()
 
         # compute output
-        output = model(patch)
-        ce = criterion(output, target_var)
-        dice = 5 * dice_loss(output.exp(), target_var, -1)
+        output = model(img.cuda())
+        ce = criterion(output, target_gpu)
+        dice = 5 * dice_loss(output.exp(), target_gpu, -1)
         loss = ce + dice
 
         # compute gradient and do optim step
@@ -185,10 +184,10 @@ def train(train_loader, model, criterion, optimizer, epoch, logger):
         indices = output.data.max(dim=1)[1].cpu().numpy()
         metrics_res = eval_metrics(indices, target.numpy())
         dice_sim, iou_metric = metrics_res
-        logger.metrics['ce'].update(ce.data.item(), batch_img.size(0))
-        logger.metrics['dice'].update(dice.data.item(), batch_img.size(0))
-        logger.metrics['dice_metric'].update(dice_sim, batch_img.size(0))
-        logger.metrics['iou_metric'].update(iou_metric, batch_img.size(0))
+        logger.metrics['ce'].update(ce.data.item(), img.size(0))
+        logger.metrics['dice'].update(dice.data.item(), img.size(0))
+        logger.metrics['dice_metric'].update(dice_sim, img.size(0))
+        logger.metrics['iou_metric'].update(iou_metric, img.size(0))
 
         if i % args.print_freq == 0:
             logger.print_metrics(epoch, i, len(train_loader))
@@ -201,24 +200,23 @@ def validate(val_loader, model, criterion, epoch, logger):
     logger.clear_metrics()
 
     with torch.no_grad():
-        for i, (_, batch_img, target) in enumerate(val_loader):
-            target_var = target.cuda()
-            patch = batch_img.cuda()
+        for i, (_, img, target) in enumerate(val_loader):
+            target_gpu = target.cuda()
 
             # compute output
-            output = model(patch)
-            ce = criterion(output, target_var)
-            dice = 5 * dice_loss(output.exp(), target_var, -1)
+            output = model(img.cuda())
+            ce = criterion(output, target_gpu)
+            dice = 5 * dice_loss(output.exp(), target_gpu, -1)
             loss = ce + dice
 
             # measure dice metric
             indices = output.data.max(dim=1)[1].cpu().numpy()
             metrics_res = eval_metrics(indices, target.numpy())
             dice_sim, iou_metric = metrics_res
-            logger.metrics['ce'].update(ce.data.item(), batch_img.size(0))
-            logger.metrics['dice'].update(dice.data.item(), batch_img.size(0))
-            logger.metrics['dice_metric'].update(dice_sim, batch_img.size(0))
-            logger.metrics['iou_metric'].update(iou_metric, batch_img.size(0))
+            logger.metrics['ce'].update(ce.data.item(), img.size(0))
+            logger.metrics['dice'].update(dice.data.item(), img.size(0))
+            logger.metrics['dice_metric'].update(dice_sim, img.size(0))
+            logger.metrics['iou_metric'].update(iou_metric, img.size(0))
 
             if i % args.print_freq == 0:
                 logger.print_metrics(epoch, i, len(val_loader), 'test')
