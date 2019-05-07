@@ -55,6 +55,50 @@ class AdjacencyEstimator(torch.nn.Module):
 
 
 class LambdaControl:
+    """Utility to optimize the value of the lambda parameter, which is the
+    weighting term of the NonAdjLoss.
+
+    Parameters
+    ----------
+    graph_gt : :class:`torch.Tensor`
+        ground truth adjacency map.
+    tuning_epoch : int
+        index of the epoch at which we stop increasing `lambda_`.
+        For example : for a total training time of 200 epochs, tuning_epoch
+        could be 180.
+        To disable this tuning step, set the parameter to
+        the total number of epoch (ex: 200 in the previous example).
+
+    Attributes
+    ----------
+    nb_conn_ab_max : int
+        Description of attribute `nb_conn_ab_max`.
+    lambda_ : float
+        weighting term of the NonAdjLoss.
+    lambda_factor : float
+        factor used to increase `lambda_` at each call to :func:`update`.
+    train_nan_count : int
+        counter of the number of nan values caught so far.
+    last_good_epoch : int
+        Index of the last epoch with a good seg metric.
+        Good = decrease should not be more than 0.01 compared to `good_seg_metric_value`.
+    good_seg_metric_value : float
+        value of the segmentation metric at epoch 0. This is used as a reference
+        point in order to monitor if the segmentation quality decreases during
+        training. This is ultimately used to control `lambda_`.
+    update_counter : int
+        number of iterations without updating `lambda_`. `lambda_` is updated
+        when `update_counter` reaches 5.
+    graph_gt : :class:`torch.Tensor`
+        ground truth adjacency map.
+    tuning_epoch : int
+        index of the epoch at which we stop increasing `lambda_`.
+        For example : for a total training time of 200 epochs, tuning_epoch
+        could be 180.
+        To disable this tuning step, set the parameter to
+        the total number of epoch (ex: 200 in the previous example).
+
+    """
     def __init__(self, graph_gt, tuning_epoch):
         self.graph_gt = graph_gt
         self.nb_conn_ab_max = (graph_gt > 0).sum()
@@ -62,33 +106,55 @@ class LambdaControl:
         self.lambda_factor = 1.3
         self.train_nan_count = 0
         self.last_good_epoch = 0
-        self.good_dice_value = None
+        self.good_seg_metric_value = None
         self.update_counter = 0
         self.tuning_epoch = tuning_epoch
 
     def get_config(self):
-        if self.good_dice_value is None:
+        if self.good_seg_metric_value is None:
             return (self.graph_gt, self.nb_conn_ab_max, self.lambda_, False)
         else:
             return (self.graph_gt, self.nb_conn_ab_max, self.lambda_, True)
 
-    def update(self, epoch, avg_dice_train, avg_graph_train,
-               avg_dice_val, train_nan):
+    def update(self, epoch, avg_seg_loss_train, avg_nonadjloss_train,
+               avg_seg_loss_val, has_train_nan):
+        """Update the lambda parameter according to metrics from the previous epoch.
+
+        Parameters
+        ----------
+        epoch : int
+            index of the epoch.
+        avg_seg_loss_train : float
+            average training segmentation loss per image per epoch.
+        avg_nonadjloss_train : float
+            average training NonAdjLoss per image per epoch.
+        avg_seg_loss_val : float
+            average validation segmentation loss per image per epoch.
+        has_train_nan : bool
+            flag indicating if nan values have appeared during last training epoch.
+
+        Returns
+        -------
+        int
+            0 if training should continue.
+            -1 or -2 to interrupt.
+
+        """
         # Init lambda after first epoch
         if epoch == 0:
-            self.lambda_ = 0.3 * (avg_dice_train / avg_graph_train)
-            self.good_dice_value = avg_dice_val
+            self.lambda_ = 0.3 * (avg_seg_loss_train / avg_nonadjloss_train)
+            self.good_seg_metric_value = avg_seg_loss_val
         elif epoch == self.tuning_epoch:
             self.update_counter = 4
 
         # if no issue was detected, check dice and update
-        if train_nan is False and self.train_nan_count < 3:
+        if has_train_nan is False and self.train_nan_count < 3:
             # automatic update of lambda
             if epoch < self.tuning_epoch:
-                if self.good_dice_value - avg_dice_val >= 0.02:
+                if self.good_seg_metric_value - avg_seg_loss_val >= 0.02:
                     print('--High decrease in dice detected, no lambda update for 5 epochs')
                     self.update_counter = 0
-                elif self.good_dice_value - avg_dice_val >= 0.01:
+                elif self.good_seg_metric_value - avg_seg_loss_val >= 0.01:
                     print('--Small decrease in dice detected')
 
                 elif epoch > 0:
@@ -101,7 +167,7 @@ class LambdaControl:
 
                     self.train_nan_count = 0
             else:
-                dice_diff = self.good_dice_value - avg_dice_val
+                dice_diff = self.good_seg_metric_value - avg_seg_loss_val
                 if dice_diff > 0:
                     if self.update_counter >= 4:
                         print('--Decrease lambda to improve dice {:.4f}'.format(dice_diff))
@@ -113,12 +179,12 @@ class LambdaControl:
                 else:
                     self.update_counter = 0
 
-            if avg_dice_val >= self.good_dice_value - 0.01:
+            if avg_seg_loss_val >= self.good_seg_metric_value - 0.01:
                 print('--Logging as good epoch')
                 self.last_good_epoch = epoch
 
         # if an error was detected decrease factor
-        elif train_nan is True and self.train_nan_count < 3:
+        elif has_train_nan is True and self.train_nan_count < 3:
             print('--Decreasing lambda factor')
             self.lambda_ *= 0.9
             self.lambda_factor *= 0.98

@@ -66,12 +66,14 @@ def write_image_segmentation(img, target, nb_classes, output_dir):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    seg_colors = np.array(get_spaced_colors(nb_classes))
+    if target is not None:
+        seg_colors = np.array(get_spaced_colors(nb_classes))
     for n in range(0, img.size(0)):
         brain = cv2.cvtColor(img[n].numpy(), cv2.COLOR_GRAY2BGR)
-        brain = cv2.normalize(brain, brain, 0, 255, cv2.NORM_MINMAX)
-        seg_brain = get_annotated_image(target[n], nb_classes, seg_colors)
-        res = np.concatenate([brain, seg_brain], axis=1).astype(int)
+        res = cv2.normalize(brain, brain, 0, 255, cv2.NORM_MINMAX)
+        if target is not None:
+            seg_brain = get_annotated_image(target[n], nb_classes, seg_colors)
+            res = np.concatenate([res, seg_brain], axis=1).astype(int)
 
         output_file = os.path.join(output_dir, str(n) + '.png')
         matplotlib.pyplot.imsave(output_file, res)

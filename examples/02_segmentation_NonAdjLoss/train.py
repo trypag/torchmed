@@ -150,6 +150,8 @@ def main():
         train_nan_flag = False
         nonadj_config = lambda_control.get_config()
 
+        # Nan values can happen during training. We just need to monitor
+        # them for the update of `lambda_`.
         try:
             train(train_loader, nonadj_config, model,
                   criterion, optimizer, epoch, log_plot)
@@ -218,6 +220,9 @@ def train(train_loader, nonadj_config, model, criterion, optimizer, epoch, logge
     logger.clear_metrics()
 
     adjacencyLayer = AdjacencyEstimator(nb_classes).train().cuda()
+    # description of the variables in the same order :
+    # ground truth, number of maximal abnormal connections, lambda parameter
+    # boolean flag indicating if NonAdjLoss is used for optimization
     gt_graph, nb_conn_ab_max, lambda_coef, activate_nonadjloss = nonadj_config
 
     for i, (_, img, target) in enumerate(train_loader):
@@ -230,8 +235,16 @@ def train(train_loader, nonadj_config, model, criterion, optimizer, epoch, logge
         ce = criterion(output, target_gpu)
         dice = 5 * dice_loss(output.exp(), target_gpu, -1)
 
-        # Non-Adjacency loss
+        ##########
+        #
+        #                      Non-Adjacency loss
+        #
+        ##########
+
+        # labels non-adjacency matrix evaluated from the segmentation output
         nonadjloss = adjacencyLayer(output.exp()) * gt_graph
+
+        # sum and normalize to [0, 1] range, weight by lambda
         nonadjloss = (nonadjloss.sum() / nb_conn_ab_max) * lambda_coef
 
         loss = ce + dice
