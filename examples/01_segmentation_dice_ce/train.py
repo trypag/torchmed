@@ -125,7 +125,7 @@ def main():
     # median frequency balancing (useful for highly imbalanced problems)
     # Error Corrective Boosting https://arxiv.org/abs/1705.00938
     weights = miccai12_dataset.class_freq.median() / miccai12_dataset.class_freq
-    criterion = torch.nn.NLLLoss(ignore_index=-1, weight=weights).cuda()
+    nll_loss = torch.nn.NLLLoss(ignore_index=-1, weight=weights).cuda()
 
     best_dice = 0
     write_config(model, args, len(train_loader), len(val_loader))
@@ -138,8 +138,8 @@ def main():
         # update learning rate with poly rate policy
         lr = poly_lr_scheduler(optimizer, args.lr, epoch, 1, args.epochs)
 
-        train(train_loader, model, criterion, optimizer, epoch, log_plot)
-        validate(val_loader, model, criterion, epoch, log_plot)
+        train(train_loader, model, nll_loss, optimizer, epoch, log_plot)
+        validate(val_loader, model, nll_loss, epoch, log_plot)
 
         val_dice = log_plot.metrics['dice_metric'].avg
         val_iou = log_plot.metrics['iou_metric'].avg
@@ -163,16 +163,19 @@ def main():
     write_end_config(args, end_time - start_time)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, logger):
+def train(train_loader, model, nll_loss, optimizer, epoch, logger):
     logger.clear_metrics()
 
+    model.train()
+    dice_weight = 5
     for i, (_, img, target) in enumerate(train_loader):
         target_gpu = target.cuda()
 
         # compute output
         output = model(img.cuda())
-        ce = criterion(output, target_gpu)
-        dice = 5 * dice_loss(output.exp(), target_gpu, -1)
+        ce = nll_loss(output, target_gpu)
+        dice = dice_loss(output.exp(), target_gpu, ignore_index=-1)
+        dice *= dice_weight
         loss = ce + dice
 
         # compute gradient and do optim step
@@ -196,17 +199,20 @@ def train(train_loader, model, criterion, optimizer, epoch, logger):
     logger.write_avg_metrics(epoch, 'average_train.csv')
 
 
-def validate(val_loader, model, criterion, epoch, logger):
+def validate(val_loader, model, nll_loss, epoch, logger):
     logger.clear_metrics()
 
+    model.eval()
+    dice_weight = 5
     with torch.no_grad():
         for i, (_, img, target) in enumerate(val_loader):
             target_gpu = target.cuda()
 
             # compute output
             output = model(img.cuda())
-            ce = criterion(output, target_gpu)
-            dice = 5 * dice_loss(output.exp(), target_gpu, -1)
+            ce = nll_loss(output, target_gpu)
+            dice = dice_loss(output.exp(), target_gpu, ignore_index=-1)
+            dice *= dice_weight
             loss = ce + dice
 
             # measure dice metric

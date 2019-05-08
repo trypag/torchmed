@@ -128,12 +128,13 @@ def main():
     # median frequency balancing (useful for highly imbalanced problems)
     # Error Corrective Boosting https://arxiv.org/abs/1705.00938
     weights = miccai12_dataset.class_freq.median() / miccai12_dataset.class_freq
-    criterion = torch.nn.NLLLoss(ignore_index=-1, weight=weights).cuda()
+    nll_loss = torch.nn.NLLLoss(ignore_index=-1, weight=weights).cuda()
 
-    # binarize adjacencies
+    # binarize matrix and reverse to obtain only abnormal adjacencies
     graph_gt = 1 - (miccai12_dataset.graph_gt > 0).float()
     graph_gt = graph_gt.cuda()
     tuning_epoch = (args.epochs * 7) // 10
+    # utility class to optimize lambda (weighting term of the NonAdjLoss)
     lambda_control = LambdaControl(graph_gt, tuning_epoch)
 
     write_config(model, args, len(train_loader), len(val_loader))
@@ -154,7 +155,7 @@ def main():
         # them for the update of `lambda_`.
         try:
             train(train_loader, nonadj_config, model,
-                  criterion, optimizer, epoch, log_plot)
+                  nll_loss, optimizer, epoch, log_plot)
         except ValueError as ve:
             print('--NaN generated during the training')
             train_nan_flag = True
@@ -165,7 +166,7 @@ def main():
         train_dice = log_plot.metrics['dice_metric'].avg
         train_nonadjloss = log_plot.metrics['nonadjloss'].avg
 
-        validate(val_loader, nonadj_config, model, criterion, epoch, log_plot)
+        validate(val_loader, nonadj_config, model, nll_loss, epoch, log_plot)
 
         # validation metrics
         val_dice = log_plot.metrics['dice_metric'].avg
@@ -216,9 +217,11 @@ def main():
     os.system('rm {}'.format(os.path.join(args.output_dir, 'checkpoint_*')))
 
 
-def train(train_loader, nonadj_config, model, criterion, optimizer, epoch, logger):
+def train(train_loader, nonadj_config, model, nll_loss, optimizer, epoch, logger):
     logger.clear_metrics()
 
+    model.train()
+    dice_weight = 5
     adjacencyLayer = AdjacencyEstimator(nb_classes).train().cuda()
     # description of the variables in the same order :
     # ground truth, number of maximal abnormal connections, lambda parameter
@@ -232,8 +235,9 @@ def train(train_loader, nonadj_config, model, criterion, optimizer, epoch, logge
         output = model(img.cuda())
 
         # segmentation loss
-        ce = criterion(output, target_gpu)
-        dice = 5 * dice_loss(output.exp(), target_gpu, -1)
+        ce = nll_loss(output, target_gpu)
+        dice = dice_loss(output.exp(), target_gpu, ignore_index=-1)
+        dice *= dice_weight
 
         ##########
         #
@@ -280,9 +284,11 @@ def train(train_loader, nonadj_config, model, criterion, optimizer, epoch, logge
     logger.write_avg_metrics(epoch, 'average_train.csv')
 
 
-def validate(val_loader, nonadj_config, model, criterion, epoch, logger):
+def validate(val_loader, nonadj_config, model, nll_loss, epoch, logger):
     logger.clear_metrics()
 
+    model.eval()
+    dice_weight = 5
     adjacencyLayer = AdjacencyEstimator(nb_classes).train().cuda()
     gt_graph, nb_conn_ab_max, lambda_coef, activate_nonadjloss = nonadj_config
 
@@ -292,8 +298,9 @@ def validate(val_loader, nonadj_config, model, criterion, epoch, logger):
 
             # compute output
             output = model(img.cuda())
-            ce = criterion(output, target_gpu)
-            dice = 5 * dice_loss(output.exp(), target_gpu, -1)
+            ce = nll_loss(output, target_gpu)
+            dice = dice_loss(output.exp(), target_gpu, ignore_index=-1)
+            dice *= dice_weight
 
             # Non-Adjacency loss
             nonadjloss = adjacencyLayer(output.exp())
