@@ -39,10 +39,9 @@ in a semi-supervised way, opening a path to better generalization to unseen data
 
 The implementation of the NonAdjLoss is contained in :
 
-- `nonadjloss` folder :
-  - `extract_adjacency_matrix.py` : extracts and sum adjacencies from ground truth
-    segmentation maps.
-  - `loss.py` : adjacency estimator and tuning of the lambda weighting parameter.
+- `../scripts/adjacency/extract_3d_adjacency.py` : extracts and sum adjacencies from ground truth
+  segmentation maps.
+- `loss.py` : adjacency estimator and tuning of the lambda weighting parameter.
 
 ## Pre-trained models
 
@@ -106,7 +105,7 @@ In this way, you will have a first impression of how your solution performs and
 if not, how much improvements you can expect from this work.
 
 How to extract an adjacency matrix from an image, this example is part
-of `extract_adjacency_matrix.py` :
+of `extract_3d_adjacency.py` :
 
 ```python
 # adjacency matrix with one additional dimension for discarded label (-1)
@@ -121,7 +120,7 @@ label_array[label_array == -1] = args.nb_labels
 
 # extract adjacency matrix from the image and fill in the matrix
 image2graph3d_patch(label_array, img_adj.numpy(), args.nb_labels, args.n_size)
-# discard last positive label (discarded label, you remember ?)
+# discard last positive label (discarded label)
 img_adj = img_adj[:-1, :-1]
 ```
 

@@ -85,8 +85,15 @@ def main():
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
-            model.load_state_dict(checkpoint['state_dict'])
-            print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
+            try:
+                model.load_state_dict(checkpoint['state_dict'])
+            except RuntimeError as e:
+                model = torch.nn.DataParallel(model).cuda()
+                model.load_state_dict(checkpoint['state_dict'])
+                model = model.module
+
+            if 'epoch' in checkpoint.keys():
+                print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
@@ -97,17 +104,15 @@ def main():
     #####
     miccai12_dataset = MICCAI2012Dataset(args.data, nb_workers=args.workers)
 
-    train_folder = miccai12_dataset.train_dataset
     train_loader = torch.utils.data.DataLoader(
-        train_folder,
+        miccai12_dataset.train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.workers,
         pin_memory=True)
 
-    val_folder = miccai12_dataset.validation_dataset
     val_loader = torch.utils.data.DataLoader(
-        val_folder,
+        miccai12_dataset.validation_dataset,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.workers,

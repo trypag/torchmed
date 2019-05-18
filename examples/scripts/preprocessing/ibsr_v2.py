@@ -128,10 +128,8 @@ def main():
         registered_scan_norm = os.path.join(output_dir, 'prepro_im_mni_bc.nii.gz')
 
         brain = SitkReader(registered_scan_bc, torch_type='torch.FloatTensor')
-        brain_array = brain.to_torch() \
-                           .add(-mean) \
-                           .div(math.sqrt(var))
-
+        brain_array = brain.to_torch()
+        brain_array[...] = (brain_array - mean) / math.sqrt(var)
         brain.to_image_file(registered_scan_norm, sitk.sitkFloat32)
 
     print('6/ --> Remapping the labels')

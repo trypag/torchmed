@@ -17,7 +17,7 @@ class InferenceCanvas(object):
 
         self.file_names = {'image': 'prepro_im_mni_bc.nii.gz',
                            'label': 'prepro_seg_mni.nii.gz',
-                           'segmentation': 'segmentation.img'}
+                           'segmentation': 'segmentation.nii.gz'}
         self.metrics = {'dice': dice,
                         'hausdorff': hd,
                         'mean_surface_distance': assd,
