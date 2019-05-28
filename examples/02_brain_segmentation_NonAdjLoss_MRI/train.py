@@ -9,7 +9,7 @@ from torchmed.utils.loss import dice_loss
 
 from architecture import ModSegNet
 from datasets.mappings import Miccai12Mapping
-from datasets.training import MICCAI2012Dataset
+from datasets.training import MICCAI2012Dataset, SemiDataset
 from loss import AdjacencyEstimator, LambdaControl
 from utils import *
 
@@ -19,6 +19,8 @@ parser.add_argument('data', metavar='DIR', help='path to the train dataset')
 parser.add_argument('output_dir', default='', metavar='OUTPUT_DIR',
                     help='path to the output directory (default: current dir)')
 
+parser.add_argument('--semi-data-dir', metavar='SEMI_DATA_DIR', default=None,
+                    help='path to the dataset for semi-supervision')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=200, type=int, metavar='N',
@@ -44,6 +46,7 @@ parser.add_argument('--exp-id', default='willis', type=str, metavar='EXP_ID',
 def main():
     global args, nb_classes
     args = parser.parse_args()
+    args.semi_data_dir = None if args.semi_data_dir == 'None' else args.semi_data_dir
 
     #####
     #
@@ -105,17 +108,29 @@ def main():
     #                            Data loading
     #
     #####
-    miccai12_dataset = MICCAI2012Dataset(args.data, nb_workers=args.workers)
+    sup_batch_size = args.batch_size
+    semi_batch_size = None
+    semi_loader = None
+    if args.semi_data_dir is not None:
+        semi_batch_size = args.batch_size * 3
+        semi_dataset = SemiDataset(args.semi_data_dir, args.workers // 2)
+        semi_loader = torch.utils.data.DataLoader(
+            semi_dataset.train_dataset,
+            batch_size=semi_batch_size,
+            shuffle=False,
+            num_workers=args.workers // 2,
+            pin_memory=True)
 
+    image_dataset = MICCAI2012Dataset(args.data, args.workers)
     train_loader = torch.utils.data.DataLoader(
-        miccai12_dataset.train_dataset,
+        image_dataset.train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.workers,
         pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        miccai12_dataset.validation_dataset,
+        image_dataset.validation_dataset,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.workers,
@@ -132,15 +147,15 @@ def main():
 
     # median frequency balancing (useful for highly imbalanced problems)
     # Error Corrective Boosting https://arxiv.org/abs/1705.00938
-    weights = miccai12_dataset.class_freq.median() / miccai12_dataset.class_freq
+    weights = image_dataset.class_freq.median() / image_dataset.class_freq
     nll_loss = torch.nn.NLLLoss(ignore_index=-1, weight=weights).cuda()
 
     # binarize matrix and reverse to obtain only abnormal adjacencies
-    graph_gt = 1 - (miccai12_dataset.graph_gt > 0).float()
-    graph_gt = graph_gt.cuda()
+    adjacency_mat = 1 - (image_dataset.adjacency_mat > 0).float()
+    adjacency_mat = adjacency_mat.cuda()
     tuning_epoch = (args.epochs * 7) // 10
     # utility class to optimize lambda (weighting term of the NonAdjLoss)
-    lambda_control = LambdaControl(graph_gt, tuning_epoch)
+    lambda_control = LambdaControl(adjacency_mat, tuning_epoch)
 
     write_config(model, args, len(train_loader), len(val_loader))
     start_time = time.time()
@@ -159,8 +174,12 @@ def main():
         # Nan values can happen during training. We just need to monitor
         # them for the update of `lambda_`.
         try:
-            train(train_loader, nonadj_config, model,
-                  nll_loss, optimizer, epoch, log_plot)
+            if semi_loader is None:
+                train(train_loader, nonadj_config, model,
+                      nll_loss, optimizer, epoch, log_plot)
+            else:
+                train_semi(train_loader, semi_loader, nonadj_config, model,
+                           nll_loss, optimizer, epoch, log_plot)
         except ValueError as ve:
             print('--NaN generated during the training')
             train_nan_flag = True
@@ -285,6 +304,85 @@ def train(train_loader, nonadj_config, model, nll_loss, optimizer, epoch, logger
         if i % args.print_freq == 0:
             logger.print_metrics(epoch, i, len(train_loader))
             logger.write_val_metrics(epoch + (i / len(train_loader)), 'train.csv')
+
+    logger.write_avg_metrics(epoch, 'average_train.csv')
+
+
+def train_semi(train_loader, semi_loader, nonadj_config, model, nll_loss,
+               optimizer, epoch, logger):
+    logger.clear_metrics()
+
+    model.train()
+    dice_weight = 5
+    adjacencyLayer = AdjacencyEstimator(nb_classes).train().cuda()
+    # description of the variables in the same order :
+    # ground truth, number of maximal abnormal connections, lambda parameter
+    # boolean flag indicating if NonAdjLoss is used for optimization
+    gt_graph, nb_conn_ab_max, lambda_coef, activate_nonadjloss = nonadj_config
+
+    miccai_iter = iter(train_loader)
+    for i, (_, batch_oasis) in enumerate(semi_loader):
+        try:
+            batch_miccai = next(miccai_iter)
+        except StopIteration:
+            miccai_iter = iter(train_loader)
+            batch_miccai = next(miccai_iter)
+
+        oasis_size = batch_oasis.size(0)
+        _, batch_img, target = batch_miccai
+        target_gpu = target.cuda()
+        batch_img = torch.cat([batch_img, batch_oasis], dim=0)
+
+        # compute output
+        output = model(batch_img.cuda())
+
+        ##########
+        #
+        #                      Non-Adjacency loss
+        #
+        ##########
+
+        # labels non-adjacency matrix evaluated from the segmentation output
+        nonadjloss = adjacencyLayer(output.exp()) * gt_graph
+
+        # sum and normalize to [0, 1] range, weight by lambda
+        nonadjloss = (nonadjloss.sum() / nb_conn_ab_max) * lambda_coef
+
+        # segmentation loss
+        output = output[:-oasis_size]
+        ce = nll_loss(output, target_gpu)
+        dice = dice_loss(output.exp(), target_gpu, ignore_index=-1)
+        dice *= dice_weight
+
+        loss = ce + dice
+
+        # if NonAdjLoss is activated
+        if activate_nonadjloss:
+            loss += nonadjloss
+        else:
+            nonadjloss.detach_()
+
+        if math.isnan(loss.item()):
+            raise ValueError("Loss is NaN")
+
+        # compute gradient and do optim step
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # measure dice metric
+        indices = output.data.max(dim=1)[1].cpu().numpy()
+        metrics_res = eval_metrics(indices, target.numpy())
+        dice_sim, iou_metric = metrics_res
+        logger.metrics['ce'].update(ce.data.item(), batch_img.size(0) - oasis_size)
+        logger.metrics['dice'].update(dice.data.item(), batch_img.size(0) - oasis_size)
+        logger.metrics['dice_metric'].update(dice_sim, batch_img.size(0) - oasis_size)
+        logger.metrics['iou_metric'].update(iou_metric, batch_img.size(0) - oasis_size)
+        logger.metrics['nonadjloss'].update(nonadjloss, batch_img.size(0))
+
+        if i % args.print_freq == 0:
+            logger.print_metrics(epoch, i, len(semi_loader))
+            logger.write_val_metrics(epoch + (i / len(semi_loader)), 'train.csv')
 
     logger.write_avg_metrics(epoch, 'average_train.csv')
 

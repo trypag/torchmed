@@ -16,6 +16,8 @@ parser.add_argument('nb_labels', default=21, metavar='N_LABELS', type=int,
                     help='number of labels in the dataset')
 parser.add_argument('--n-size', default=1, type=int, metavar='SIZE',
                     help='size of the neighborhood')
+parser.add_argument('--discard_label', default=None, type=int, metavar='INT',
+                    help='label to discard')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 
@@ -35,41 +37,49 @@ def main():
         num_workers=args.workers,
         pin_memory=True)
 
-    adj_mat = extract_from_data(data_loader)
+    adj_mat = extract_from_data(data_loader, args.discard_label)
     save2png(adj_mat, os.path.join(args.output_dir, 'adjacency_n_' + str(args.n_size)))
 
 
-def extract_from_data(data_loader):
+def extract_from_data(data_loader, discard_label):
     nonAdjLoss_arr = torch.FloatTensor(nb_classes, nb_classes).zero_().cuda()
-    adjacencyLayer = AdjacencyEstimator(nb_classes, args.n_size * 2 + 1).train().cuda()
+    if discard_label is not None:
+        adjacencyLayer = AdjacencyEstimator(nb_classes + 1, args.n_size * 2 + 1).train().cuda()
+    else:
+        adjacencyLayer = AdjacencyEstimator(nb_classes, args.n_size * 2 + 1).train().cuda()
 
-    for i, target in enumerate(data_loader):
-        print(str(i) + ' / ' + str(len(data_loader)), target.size())
+    for i, (p, target) in enumerate(data_loader):
+        print(str(i) + ' / ' + str(len(data_loader)), target.size(), p)
+        if discard_label is not None:
+            target[target == discard_label] = nb_classes
         target_gpu = target.cuda()
-        nonAdjLoss_arr += adjacencyLayer(target_gpu)
+
+        if discard_label is not None:
+            nonAdjLoss_arr += adjacencyLayer(target_gpu)[:-1, :-1]
+        else:
+            nonAdjLoss_arr += adjacencyLayer(target_gpu)
 
     return nonAdjLoss_arr.cpu()
 
 
 class ImageDataset(Dataset):
     def __init__(self, base_dir):
-        root_dir = os.path.join(base_dir, 'train')
-        database = open(os.path.join(root_dir, 'allowed_data.txt'), 'r')
+        database = open(os.path.join(base_dir, 'allowed_data.txt'), 'r')
         patient_list = [line.rstrip('\n') for line in database]
         self.medfiles = []
 
         for patient in patient_list:
             if patient:
-                patient_dir = os.path.join(root_dir, patient)
+                patient_dir = os.path.join(base_dir, patient)
                 r = SitkReader(os.path.join(patient_dir, 'prepro_seg.nii.gz'),
                                torch_type='torch.LongTensor')
-                self.medfiles.append(r)
+                self.medfiles.append((patient, r))
 
     def __len__(self):
         return len(self.medfiles)
 
     def __getitem__(self, idx):
-        return self.medfiles[idx].to_torch()
+        return (self.medfiles[idx][0], self.medfiles[idx][1].to_torch())
 
 
 class AdjacencyEstimator(torch.nn.Module):
@@ -111,17 +121,13 @@ class AdjacencyEstimator(torch.nn.Module):
 
         image = torch.FloatTensor(one_hot_size).zero_().cuda()
         image.scatter_(1, target.unsqueeze(1), 1)
-        del target
 
         # padding of tensor of size batch x k x W x H
         p_tild = self._pad_layer(image)
         # apply constant convolution and normalize by size of kernel
-        p_tild = self._conv_layer(p_tild) / (self._conv_layer.kernel_size[0] ** 3)
+        p_tild = self._conv_layer(p_tild)
 
-        # normalization factor
-        norm_factor = image.size()[0] * image.size()[2] * image.size()[3] * image.size()[4]
-
-        return torch.einsum('nidhw,njdhw->ij', image, p_tild) / norm_factor
+        return torch.einsum('nidhw,njdhw->ij', image, p_tild)
 
 
 def save2png(image, output):

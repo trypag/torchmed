@@ -45,7 +45,7 @@ def infer_segmentation_map(model, data_loader, label_map):
             # for each element of the batch
             for i in range(0, predicted.size(0)):
                 y = position[i][1]
-                label_map[:, y, :] = predicted[i].cpu().numpy()
+                label_map[:, y, :] = predicted[i].cpu().numpy()[1:-1, 1:-1]
 
     return probability_maps
 

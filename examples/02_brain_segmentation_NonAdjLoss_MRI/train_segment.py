@@ -12,6 +12,8 @@ parser.add_argument('data', metavar='DATA_DIR', help='path to the data dir')
 parser.add_argument('output_dir', default='', metavar='OUTPUT_DIR',
                     help='path to the output directory (default: current dir)')
 
+parser.add_argument('--semi-data-dir', metavar='SEMI_DATA_DIR', default=None,
+                    help='path to the dataset for semi-supervision')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=200, type=int, metavar='N',
@@ -58,17 +60,19 @@ def main():
     #####
     print('--> The output folder is {}'.format(output_dir))
     print('--> Started train script')
-    ret = os.system('python -u {} {} {} -j {} -b {} --epochs {} --lr {} --exp-id {} --resume {}'.format(
-        train_script,
-        args.data,
-        output_dir,
-        args.workers,
-        args.batch_size,
-        args.epochs,
-        args.lr,
-        exp_id,
-        args.resume
-    ))
+    ret = os.system('python -u {} {} {} -j {} -b {} --epochs {} --lr {}'
+                    ' --exp-id {} --resume {} --semi-data-dir {}'.format(
+                        train_script,
+                        args.data,
+                        output_dir,
+                        args.workers,
+                        args.batch_size,
+                        args.epochs,
+                        args.lr,
+                        exp_id,
+                        args.resume,
+                        args.semi_data_dir
+                    ))
 
     # in case training ended with an error
     if os.WEXITSTATUS(ret) != 0:

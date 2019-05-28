@@ -37,7 +37,12 @@ class InferenceCanvas(object):
         # load model parameters
         torch.backends.cudnn.benchmark = True
         checkpoint = torch.load(self.args.model)
-        model.load_state_dict(checkpoint['state_dict'])
+        try:
+            model.load_state_dict(checkpoint['state_dict'])
+        except RuntimeError as e:
+            model = torch.nn.DataParallel(model).cuda()
+            model.load_state_dict(checkpoint['state_dict'])
+            model = model.module
 
         print("=> segmentation output at {}".format(self.args.output))
         test_times = []
