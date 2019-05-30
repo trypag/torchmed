@@ -206,7 +206,13 @@ class ImageDataset(Dataset):
 
         for patient in sorted(os.listdir(base_dir)):
             p_dir = os.path.join(base_dir, patient)
-            seg_file = os.path.join(p_dir, 'segmentation.hdr')
+            if os.path.exists(os.path.join(p_dir, 'segmentation.hdr')):
+                seg_file = os.path.join(p_dir, 'segmentation.hdr')
+            elif os.path.exists(os.path.join(p_dir, 'segmentation.nii.gz')):
+                seg_file = os.path.join(p_dir, 'segmentation.nii.gz')
+            else:
+                raise Exception('Segmentation file does not exist (.nii.gz or .hdr)')
+
             if os.path.isdir(p_dir) and os.path.exists(seg_file):
                 r = SitkReader(seg_file, torch_type='torch.LongTensor')
                 self.medfiles.append((patient, r, patient))
