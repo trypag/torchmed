@@ -56,7 +56,7 @@ def main():
     log_plot = LoggerPlotter(args.output_dir,
                              ['train.csv', 'validation.csv',
                               'average_train.csv', 'average_validation.csv',
-                              'learning_rate.csv'],
+                              'learning_rates.csv'],
                              ['loss.png',
                               'average_dice.png', 'learning_rate.png',
                               'losses_train.png', 'losses_validation.png',
@@ -68,7 +68,7 @@ def main():
     log_plot.log('validation.csv', log_metrics)
     log_plot.log('average_train.csv', log_metrics)
     log_plot.log('average_validation.csv', log_metrics)
-    log_plot.log('learning_rate.csv', ';'.join(['epoch', 'lr']))
+    log_plot.log('learning_rates.csv', ';'.join(['epoch', 'lr', 'dice', 'nonadjloss']))
 
     ce = MetricLogger('ce', 'CE Loss', '{:.2e}', '{:.3e}', '{:.5f}')
     dice_ls = MetricLogger('dice', 'Dice Loss', '{:.2e}', '{:.3e}', '{:.5f}')
@@ -149,6 +149,7 @@ def main():
     # Error Corrective Boosting https://arxiv.org/abs/1705.00938
     weights = image_dataset.class_freq.median() / image_dataset.class_freq
     nll_loss = torch.nn.NLLLoss(ignore_index=-1, weight=weights).cuda()
+    dice_weight = 5
 
     # binarize matrix and reverse to obtain only abnormal adjacencies
     adjacency_mat = 1 - (image_dataset.adjacency_mat > 0).float()
@@ -175,11 +176,11 @@ def main():
         # them for the update of `lambda_`.
         try:
             if semi_loader is None:
-                train(train_loader, nonadj_config, model,
-                      nll_loss, optimizer, epoch, log_plot)
+                train(train_loader, model, optimizer, nll_loss, nonadj_config,
+                      dice_weight, epoch, log_plot)
             else:
-                train_semi(train_loader, semi_loader, nonadj_config, model,
-                           nll_loss, optimizer, epoch, log_plot)
+                train_semi(train_loader, semi_loader, model, optimizer,
+                           nll_loss, nonadj_config, dice_weight, epoch, log_plot)
         except ValueError as ve:
             print('--NaN generated during the training')
             train_nan_flag = True
@@ -190,7 +191,7 @@ def main():
         train_dice = log_plot.metrics['dice_metric'].avg
         train_nonadjloss = log_plot.metrics['nonadjloss'].avg
 
-        validate(val_loader, nonadj_config, model, nll_loss, epoch, log_plot)
+        validate(val_loader, model, nll_loss, nonadj_config, dice_weight, epoch, log_plot)
 
         # validation metrics
         val_dice = log_plot.metrics['dice_metric'].avg
@@ -215,7 +216,7 @@ def main():
             lambda_control.train_nan_count = 0
 
         # log learning rate and update figures
-        log_plot.log('learning_rate.csv', '{:d};{:.7f}'.format(epoch, lr))
+        log_plot.log('learning_rates.csv', '{:d};{:.7f};{:.3f};{:.5e}'.format(epoch, lr, dice_weight, nonadj_config[-2]))
         update_figures(log_plot)
 
         # save checkpoint
@@ -241,11 +242,10 @@ def main():
     os.system('rm {}'.format(os.path.join(args.output_dir, 'checkpoint_*')))
 
 
-def train(train_loader, nonadj_config, model, nll_loss, optimizer, epoch, logger):
+def train(train_loader, model, optimizer, nll_loss, nonadj_config, dice_weight, epoch, logger):
     logger.clear_metrics()
 
     model.train()
-    dice_weight = 5
     adjacencyLayer = AdjacencyEstimator(nb_classes).train().cuda()
     # description of the variables in the same order :
     # ground truth, number of maximal abnormal connections, lambda parameter
@@ -308,12 +308,11 @@ def train(train_loader, nonadj_config, model, nll_loss, optimizer, epoch, logger
     logger.write_avg_metrics(epoch, 'average_train.csv')
 
 
-def train_semi(train_loader, semi_loader, nonadj_config, model, nll_loss,
-               optimizer, epoch, logger):
+def train_semi(train_loader, semi_loader, model, optimizer, nll_loss,
+               nonadj_config, dice_weight, epoch, logger):
     logger.clear_metrics()
 
     model.train()
-    dice_weight = 5
     adjacencyLayer = AdjacencyEstimator(nb_classes).train().cuda()
     # description of the variables in the same order :
     # ground truth, number of maximal abnormal connections, lambda parameter
@@ -387,11 +386,10 @@ def train_semi(train_loader, semi_loader, nonadj_config, model, nll_loss,
     logger.write_avg_metrics(epoch, 'average_train.csv')
 
 
-def validate(val_loader, nonadj_config, model, nll_loss, epoch, logger):
+def validate(val_loader, model, nll_loss, nonadj_config, dice_weight, epoch, logger):
     logger.clear_metrics()
 
     model.eval()
-    dice_weight = 5
     adjacencyLayer = AdjacencyEstimator(nb_classes).train().cuda()
     gt_graph, nb_conn_ab_max, lambda_coef, activate_nonadjloss = nonadj_config
 

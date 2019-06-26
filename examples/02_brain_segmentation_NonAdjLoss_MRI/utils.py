@@ -61,7 +61,7 @@ def update_figures(log_plot):
     log_plot.plot('losses_validation.png', 'epoch', 'loss')
 
     # plot learning rate
-    log_plot.add_line('learning_rate', 'learning_rate.csv',
+    log_plot.add_line('learning_rates', 'learning_rates.csv',
                       'epoch', 'lr', '#1f77b4')
     log_plot.plot('learning_rate.png', 'epoch', 'learning rate')
 
