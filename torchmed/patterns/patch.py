@@ -151,11 +151,11 @@ class SquaredSlidingWindow(Pattern):
                 shape = list(image.size())
                 shape[dim] = 1
                 if side == 0:
-                    constant_s = [torch.Tensor(*shape).type_as(image)
-                                       .fill_(self._pad_value)] * pad
+                    constant_s = [torch.zeros(shape, dtype=image.dtype)
+                                       .fill_(self._pad_value)] * pad.item()
                 else:
-                    constant_e = [torch.Tensor(*shape).type_as(image)
-                                       .fill_(self._pad_value)] * pad
+                    constant_e = [torch.zeros(shape, dtype=image.dtype)
+                                       .fill_(self._pad_value)] * pad.item()
 
                 image = torch.cat(constant_s + [image] + constant_e, dim)
 
